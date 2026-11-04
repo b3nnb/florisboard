@@ -18,6 +18,7 @@ package dev.patrickgold.florisboard.ime.core
 
 import android.content.Context
 import dev.patrickgold.florisboard.app.FlorisPreferenceStore
+import dev.patrickgold.florisboard.lib.FlorisLocale
 import dev.patrickgold.florisboard.lib.devtools.flogDebug
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,8 +62,20 @@ class SubtypeManager(context: Context) {
             } else {
                 emptyList()
             }
-            subtypes = list
-            evaluateActiveSubtype(list)
+            // Auto-add English/US subtype if none configured
+            if (list.isEmpty()) {
+                val defaultSubtype = Subtype(
+                    id = System.currentTimeMillis(),
+                    primaryLocale = FlorisLocale.from("en", "US"),
+                    secondaryLocales = emptyList(),
+                )
+                subtypes = listOf(defaultSubtype)
+                persistNewSubtypeList(listOf(defaultSubtype))
+                evaluateActiveSubtype(listOf(defaultSubtype))
+            } else {
+                subtypes = list
+                evaluateActiveSubtype(list)
+            }
         }
     }
 

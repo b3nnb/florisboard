@@ -5,6 +5,12 @@
     <!-- Permission needed to vibrate if the user has key press vibration enabled -->
     <uses-permission android:name="android.permission.VIBRATE"/>
 
+    <!-- Permission needed for the translation feature (DeepL / LLM backends) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+
     <!-- Permission needed to create notifications on devices running Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
@@ -24,6 +30,7 @@
     <application
         android:name="dev.patrickgold.florisboard.FlorisApplication"
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:dataExtractionRules="@xml/backup_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/floris_app_icon"
@@ -48,6 +55,20 @@
                 <action android:name="android.view.InputMethod"/>
             </intent-filter>
             <meta-data android:name="android.view.im" android:resource="@xml/method"/>
+        </service>
+
+        <!-- WhatsApp translation overlay — accessibility service that reads screen text -->
+        <service
+            android:name="dev.patrickgold.florisboard.ime.translation.WhatsAppTranslateOverlay"
+            android:exported="false"
+            android:label="WhatsApp Translate Overlay"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config"/>
         </service>
 
         <!-- Spellchecker service -->

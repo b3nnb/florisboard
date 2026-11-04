@@ -97,6 +97,10 @@ fun Smartbar() {
     val smartbarEnabled by prefs.smartbar.enabled.collectAsState()
     val extendedActionsPlacement by prefs.smartbar.extendedActionsPlacement.collectAsState()
 
+    // Translation toolbar (toggle + live preview) — always visible above the
+    // smart bar rows so the feature can be toggled on/off at any time.
+    TranslationBar()
+
     AnimatedVisibility(
         visible = smartbarEnabled,
         enter = VerticalEnterTransition,

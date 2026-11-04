@@ -46,6 +46,7 @@ import dev.patrickgold.florisboard.ime.nlp.BreakIterators
 import dev.patrickgold.florisboard.ime.nlp.ClipboardSuggestionCandidate
 import dev.patrickgold.florisboard.ime.nlp.SuggestionCandidate
 import dev.patrickgold.florisboard.ime.text.key.KeyVariation
+import dev.patrickgold.florisboard.ime.translation.TranslationManager
 import dev.patrickgold.florisboard.lib.FlorisLocale
 import dev.patrickgold.florisboard.lib.devtools.flogDebug
 import kotlinx.coroutines.CoroutineScope
@@ -427,6 +428,8 @@ class ImeController(
         }
 
         override fun emitEnter() {
+            // Enter always does the normal enter/send (newline or IME action).
+            // Translation is triggered by the Translate button in the TranslationBar.
             val info = state.editor.info
             val isShiftPressed = false // TODO inputEventDispatcher.isPressed(KeyCode.SHIFT)
             if (info.imeOptions.flagNoEnterAction || info.inputAttributes.flagTextMultiLine && isShiftPressed) {
@@ -646,6 +649,9 @@ class ImeController(
 
     companion object {
         private val NEWLINE_SEQ = "\n".asK3String()
+
+        // Max chars before the cursor to translate when Enter/Send is intercepted.
+        private const val ENTER_TRANSLATE_CURSOR_CHARS = 10000
     }
 }
 
