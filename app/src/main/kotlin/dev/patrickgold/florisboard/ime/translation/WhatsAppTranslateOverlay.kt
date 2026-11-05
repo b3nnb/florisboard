@@ -143,9 +143,14 @@ class WhatsAppTranslateOverlay : AccessibilityService() {
             "$label ${m.text}"
         }
 
-        val prompt = "You are translating a WhatsApp conversation from Chinese to English. " +
+        val prompt = "You are a native bilingual translator who grew up speaking both Chinese and English. " +
+            "You're translating a WhatsApp conversation between two people.\n\n" +
             "Each message is labeled [You] (sent by the user) or [Them] (received from the other person). " +
-            "Translate each message naturally and conversationally. " +
+            "Your goal: the person reading this should feel like it was written by a native English speaker, not translated.\n\n" +
+            "1. Match the TONE — casual, playful, frustrated, polite? Same feeling in English.\n" +
+            "2. Find CULTURAL EQUIVALENTS for Chinese slang and idioms (成语, 网络用语). Don't translate literally — find the English phrase that carries the same social weight and meaning.\n" +
+            "3. Keep it conversational — how people actually text in English, not textbook language.\n" +
+            "4. If a Chinese saying or phrase has a well-known English equivalent, use that instead.\n\n" +
             "Keep the [You]/[Them] labels and put each translated message on its own line. " +
             "Respond with ONLY the translations in the same format, nothing else:\n\n$chatText"
 

@@ -253,7 +253,13 @@ object TranslationManager {
             "EN" -> "English"
             else -> targetLang
         }
-        val prompt = "You are translating a casual text message. First understand the intent and clean up the phrasing for clarity. Then translate to $langName naturally and conversationally, not word-for-word. Respond with ONLY the translation, nothing else:\n\n$text"
+        val prompt = "You are a native bilingual translator who grew up speaking both English and $langName. You're translating a casual text message from someone texting a friend.\n\n" +
+            "Your goal: the person receiving this should feel like it was written by a native $langName speaker, not translated. Here's how:\n\n" +
+            "1. Match the TONE and REGISTER exactly — if the English is casual/slangy/playful/frustrated, the translation should feel the same way in $langName.\n" +
+            "2. Find CULTURAL EQUIVALENTS for slang and idioms — don't translate literally. If they say something that doesn't exist as-is in $langName culture, find the closest equivalent that carries the same feeling and social weight.\n" +
+            "3. Keep it conversational and natural — like how people actually text in $langName, not textbook language.\n" +
+            "4. If there's a well-known $langName saying or phrase that captures the same meaning as an English idiom, use it instead.\n\n" +
+            "Respond with ONLY the translation, nothing else:\n\n$text"
         val body = JSONObject().apply {
             put("model", OLLAMA_MODEL)
             put("messages", JSONArray().apply {
