@@ -36,6 +36,7 @@ import dev.patrickgold.florisboard.ime.smartbar.IncognitoDisplayMode
 import dev.patrickgold.florisboard.ime.smartbar.InlineSuggestionsStyleCache
 import dev.patrickgold.florisboard.ime.smartbar.Smartbar
 import dev.patrickgold.florisboard.ime.smartbar.quickaction.QuickActionsOverflowPanel
+import dev.patrickgold.florisboard.ime.text.EmojiPopup
 import dev.patrickgold.florisboard.ime.theme.FlorisImeUi
 import dev.patrickgold.jetpref.datastore.model.collectAsState
 import org.florisboard.lib.snygg.ui.SnyggIcon
@@ -80,6 +81,8 @@ fun TextInputLayout(
                     )
                 }
                 ImeKeyboardBox()
+                // Emoji popup — shows above the keyboard when emoji key is pressed
+                EmojiPopup(imeController = imeController)
             }
         }
     }

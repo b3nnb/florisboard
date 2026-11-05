@@ -99,6 +99,9 @@ class ImeController(
     // Set by FlorisApplication after construction — used for autocorrect suggestions
     lateinit var nlpManager: NlpManager
 
+    // Emoji popup visibility — toggled by the emoji key (ShowMediaPanel action)
+    var showEmojiPopup = false
+
     val activeTouchModelOptions = combine<Any, TouchModelOptions>(
         prefs.keyboard.numberRow.asFlow(),
         prefs.keyboard.fnKeyEnabled.asFlow(),
@@ -442,9 +445,8 @@ class ImeController(
                     )
                 }
                 ImeActions.ShowMediaPanel -> {
-                    state = state.copy(
-                        flags = state.flags.withImeUiMode(ImeUiMode.MEDIA),
-                    )
+                    // Toggle emoji popup (not full keyboard switch)
+                    showEmojiPopup = !showEmojiPopup
                 }
                 ImeActions.ShowClipboardPanel -> {
                     state = state.copy(
