@@ -317,8 +317,10 @@ class ImeController(
         }
 
         override fun emit(value: K3StringOrDescriptor) {
+            android.util.Log.i("Autocorrect", "emit() called: value=$value, type=${value::class.simpleName}")
             val interceptor = emitInterceptor.load()
             if (interceptor != null) {
+                android.util.Log.i("Autocorrect", "emit() intercepted by $interceptor")
                 interceptor.onEmit(value)
                 return
             }
@@ -326,13 +328,15 @@ class ImeController(
         }
 
         override fun emitText(value: K3String) {
+            android.util.Log.i("Autocorrect", "emitText() called: value='${value}', toText='${value.toText()}'")
             // Autocorrect: when space is pressed, check the last word and correct if needed.
             // Uses the simple Autocorrect singleton — no NLP pipeline dependency.
-            val textStr = value.toString()
+            val textStr = value.toText()
             if (textStr == " ") {
                 try {
                     if (Autocorrect.isLoaded()) {
                         val textBefore = state.content.surroundingText.textBefore
+                        android.util.Log.i("Autocorrect", "space pressed, textBefore='${textBefore}', loaded=${Autocorrect.isLoaded()}, dictSize=${Autocorrect.dictSize()}")
                         if (textBefore.isNotEmpty()) {
                             // Find the last word before the cursor
                             var wordEnd = textBefore.length
@@ -342,9 +346,11 @@ class ImeController(
                             }
                             if (wordStart < wordEnd && wordEnd - wordStart >= 2) {
                                 val lastWord = textBefore.substring(wordStart, wordEnd)
+                                android.util.Log.i("Autocorrect", "lastWord='$lastWord', valid=${Autocorrect.isValidWord(lastWord)}")
                                 // Only correct if the word isn't already valid
                                 if (!Autocorrect.isValidWord(lastWord)) {
                                     val correction = Autocorrect.correct(lastWord)
+                                    android.util.Log.i("Autocorrect", "correction='$correction'")
                                     if (correction != null) {
                                         val ic = state.editor.ic.get()
                                         if (ic != null) {
@@ -357,9 +363,11 @@ class ImeController(
                                 }
                             }
                         }
+                    } else {
+                        android.util.Log.w("Autocorrect", "Dictionary not loaded yet!")
                     }
                 } catch (e: Exception) {
-                    // Autocorrect is best-effort — don't block typing
+                    android.util.Log.e("Autocorrect", "Error: ${e.message}", e)
                 }
             }
             super.emitText(value)
@@ -653,9 +661,48 @@ class ImeController(
         override fun resetContent(newSelection: K3TextRange, newSurrounding: K3SurroundingText) {
             super.resetContent(newSelection, newSurrounding)
             reevaluateInputShiftState()
-            // Trigger NLP suggestions for the new composing text (enables autocorrect)
-            // Always call suggest even if prefs say suggestions are off — autocorrect
-            // should work regardless of the suggestion bar visibility setting
+
+            // Autocorrect: detect when a space was just typed (textBefore ends with space)
+            // and correct the word before that space. This runs in resetContent which fires
+            // after the cursor updates (onUpdateCursorAnchorInfo), so the space is already
+            // committed — we replace the misspelled word in-place.
+            try {
+                val textBefore = state.content.surroundingText.textBefore
+                if (textBefore.isNotEmpty() && textBefore.last() == ' ') {
+                    // Find the word before the trailing space
+                    val beforeSpace = textBefore.dropLast(1) // remove the trailing space
+                    if (beforeSpace.isNotEmpty()) {
+                        var wordEnd = beforeSpace.length
+                        var wordStart = wordEnd
+                        while (wordStart > 0 && !beforeSpace[wordStart - 1].isWhitespace()) {
+                            wordStart--
+                        }
+                        if (wordStart < wordEnd && wordEnd - wordStart >= 2) {
+                            val lastWord = beforeSpace.substring(wordStart, wordEnd)
+                            if (Autocorrect.isLoaded()) {
+                                val correction = Autocorrect.correct(lastWord)
+                                if (correction != null) {
+                                    android.util.Log.i("Autocorrect", "resetContent: correcting '$lastWord' → '$correction'")
+                                    val ic = state.editor.ic.get()
+                                    if (ic != null) {
+                                        // The word is at position [wordStart, wordEnd] in textBefore
+                                        // (before the space). The space is at [wordEnd, wordEnd+1].
+                                        // Replace just the word, keep the space.
+                                        ic.beginBatchEdit()
+                                        ic.setComposingRegion(wordStart, wordEnd)
+                                        ic.commitText(correction, 1)
+                                        ic.endBatchEdit()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("Autocorrect", "resetContent error: ${e.message}", e)
+            }
+
+            // Trigger NLP suggestions for the new composing text
             try {
                 if (::nlpManager.isInitialized) {
                     nlpManager.suggest(nlpManager.activeSubtype, state.content)

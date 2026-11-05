@@ -78,13 +78,6 @@ object TranslationManager {
     private val _previewText = MutableStateFlow("")
     val previewText: StateFlow<String> = _previewText.asStateFlow()
 
-    // Cache the last translated text to avoid re-translating on cursor moves
-    // (textBefore changes when cursor moves even if the text didn't)
-    private var lastTranslatedInput = ""
-    private var lastTranslationResult = ""
-    private val translationDebounce = android.os.SystemClock.uptimeMillis()
-    private var lastTranslationTime = 0L
-
     private fun initialized(): Boolean = ::prefs.isInitialized
 
     /**
@@ -148,25 +141,13 @@ object TranslationManager {
         if (!initialized()) return
         if (text.isBlank()) {
             _previewText.value = ""
-            lastTranslatedInput = ""
-            lastTranslationResult = ""
-            return
-        }
-        // Skip if the text hasn't actually changed (cursor move, not edit).
-        // Compare the trimmed content — spaces/cursor position shouldn't trigger.
-        if (text.trim() == lastTranslatedInput) {
-            if (_translateOn.value) _previewText.value = lastTranslationResult
             return
         }
         val lang = _targetLang.value
         scope.launch {
             try {
                 val translated = translateDeepL(text, lang)
-                if (_translateOn.value) {
-                    lastTranslatedInput = text.trim()
-                    lastTranslationResult = translated
-                    _previewText.value = translated
-                }
+                if (_translateOn.value) _previewText.value = translated
             } catch (_: Exception) {
                 if (_translateOn.value) _previewText.value = "…"
             }
@@ -275,10 +256,11 @@ object TranslationManager {
         val prompt = "You ARE a native $langName speaker who grew up in a $langName-speaking city. You're not translating — you're rewriting what this person meant to say, as if YOU were texting your own friend.\n\n" +
             "Rules:\n" +
             "1. Write how a LOCAL actually texts. Not textbook, not polite-formal. Real texting — the way someone your age talks to a friend on WeChat or WhatsApp.\n" +
-            "2. Slang, internet language, abbreviations, emojis if the vibe fits — use what a local would use. If the English is casual and slangy, match that energy in $langName.\n" +
-            "3. DON'T translate idioms literally. Find the $langName equivalent that hits the same feeling. If someone says 'that's sick' in English, don't translate to something about illness — find what a $langName speaker says when they think something is cool/impressive.\n" +
-            "4. Match the emotional register exactly. Angry, teasing, sweet, dismissive, excited — same energy in $langName. Use particles and tone markers naturally ($langName specific: 啊/了/呢/吧 for Chinese, etc.).\n" +
-            "5. If the English has typos, fast-typing shorthand, or missing punctuation — replicate that casual energy. Don't clean it up into formal writing.\n\n" +
+            "2. Slang, internet language, abbreviations — use what a local would use. If the English is casual and slangy, match that energy in $langName.\n" +
+            "3. DON'T translate idioms literally. Find the $langName equivalent that hits the same feeling.\n" +
+            "4. Match the emotional register exactly. Angry, teasing, sweet, dismissive, excited — same energy in $langName. Use particles and tone markers naturally.\n" +
+            "5. If the English has typos, fast-typing shorthand, or missing punctuation — replicate that casual energy. Don't clean it up into formal writing.\n" +
+            "6. DO NOT add emojis unless the original text has them. Only mirror what's there.\n\n" +
             "Respond with ONLY the $langName text, nothing else:\n\n$text"
         val body = JSONObject().apply {
             put("model", OLLAMA_MODEL)

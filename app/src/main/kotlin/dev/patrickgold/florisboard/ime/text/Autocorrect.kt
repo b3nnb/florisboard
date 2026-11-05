@@ -39,8 +39,12 @@ object Autocorrect {
 
     fun isLoaded(): Boolean = loaded
 
+    fun dictSize(): Int = dictionary.size
+
     /**
      * Check if [word] is a valid word in the dictionary.
+     * NOTE: the dictionary includes common misspellings, so this is NOT
+     * a reliable "is this word correct" check. Use [correct] instead.
      */
     fun isValidWord(word: String): Boolean {
         if (!loaded || word.length < MIN_WORD_LENGTH) return true
@@ -49,24 +53,30 @@ object Autocorrect {
 
     /**
      * Find the closest correction for [word] using Levenshtein distance.
-     * Returns null if the word is valid or no close match is found.
+     * Returns null if no close match is found.
+     * Even if the word is in the dictionary (it might be a misspelling
+     * with low frequency), we still search for a higher-frequency
+     * correction within edit distance 1.
      */
     fun correct(word: String): String? {
         if (!loaded) return null
         val lower = word.lowercase()
         if (lower.length < MIN_WORD_LENGTH) return null
-        if (dictionary.containsKey(lower)) return null // already correct
+
+        val currentFreq = dictionary[lower] ?: 0
 
         var bestMatch: String? = null
         var bestDist = MAX_EDIT_DISTANCE + 1
-        var bestFreq = -1
+        var bestFreq = currentFreq // must be better than current
 
         for ((candidate, freq) in dictionary) {
             val lenDiff = Math.abs(candidate.length - lower.length)
             if (lenDiff > MAX_EDIT_DISTANCE) continue
+            if (candidate == lower) continue // skip self
 
             val dist = levenshtein(lower, candidate)
             if (dist in 1..MAX_EDIT_DISTANCE) {
+                // Prefer lower edit distance, then higher frequency
                 if (dist < bestDist || (dist == bestDist && freq > bestFreq)) {
                     bestDist = dist
                     bestFreq = freq
