@@ -36,6 +36,7 @@ import dev.patrickgold.florisboard.ime.dictionary.DictionaryManager
 import dev.patrickgold.florisboard.ime.extension.ExtensionController
 import dev.patrickgold.florisboard.ime.io.AndroidStorageController
 import dev.patrickgold.florisboard.ime.keyboard3.ImeController
+import dev.patrickgold.florisboard.ime.text.Autocorrect
 import dev.patrickgold.florisboard.ime.media.emoji.FlorisEmojiCompat
 import dev.patrickgold.florisboard.ime.nlp.NlpManager
 import dev.patrickgold.florisboard.ime.text.gestures.GlideTypingManager
@@ -108,6 +109,8 @@ class FlorisApplication : Application() {
             extensionController = ExtensionController(storageController)
             imeController = ImeController(storageController, clipboardManager.value)
             imeController.nlpManager = nlpManager.value
+            // Load the autocorrect dictionary early so it's ready when typing starts
+            Autocorrect.init(this)
             themeController = ThemeController(
                 storageController,
                 extensionController,
