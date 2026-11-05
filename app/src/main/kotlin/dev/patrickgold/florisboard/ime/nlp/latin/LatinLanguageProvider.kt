@@ -23,6 +23,7 @@ import dev.patrickgold.florisboard.ime.nlp.SpellingProvider
 import dev.patrickgold.florisboard.ime.nlp.SpellingResult
 import dev.patrickgold.florisboard.ime.nlp.SuggestionCandidate
 import dev.patrickgold.florisboard.ime.nlp.SuggestionProvider
+import dev.patrickgold.florisboard.ime.nlp.WordSuggestionCandidate
 import dev.patrickgold.florisboard.lib.devtools.flogDebug
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -38,6 +39,13 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         // Default user ID used for all subtypes, unless otherwise specified.
         // See `ime/core/Subtype.kt` Line 210 and 211 for the default usage
         const val ProviderId = "org.florisboard.nlp.providers.latin"
+
+        // Maximum edit distance for autocorrect suggestions.
+        // 2 catches most fast-typing typos (transposed letters, doubled letters,
+        // missing letters, extra letters) without too many false positives.
+        private const val MAX_EDIT_DISTANCE = 2
+        // Only autocorrect if the top suggestion has at least this confidence.
+        private const val MIN_AUTOCONFIDENCE = 0.7
     }
 
     private val appContext by context.appContext()
@@ -52,25 +60,8 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
     }
 
     override suspend fun preload(subtype: Subtype) = withContext(Dispatchers.IO) {
-        // Here we have the chance to preload dictionaries and prepare a neural network for a specific language.
-        // Is kept in sync with the active keyboard subtype of the user, however a new preload does not necessary mean
-        // the previous language is not needed anymore (e.g. if the user constantly switches between two subtypes)
-
-        // To read a file from the APK assets the following methods can be used:
-        // appContext.assets.open()
-        // appContext.assets.reader()
-        // appContext.assets.bufferedReader()
-        // appContext.assets.readText()
-        // To copy an APK file/dir to the file system cache (appContext.cacheDir), the following methods are available:
-        // appContext.assets.copy()
-        // appContext.assets.copyRecursively()
-
-        // The subtype we get here contains a lot of data, however we are only interested in subtype.primaryLocale and
-        // subtype.secondaryLocales.
-
         wordData.withLock { wordData ->
             if (wordData.isEmpty()) {
-                // Here we use readText() because the test dictionary is a json dictionary
                 val rawData = appContext.assets.readText("ime/dict/data.json")
                 val jsonData = Json.decodeFromString(wordDataSerializer, rawData)
                 wordData.putAll(jsonData)
@@ -87,14 +78,19 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         allowPossiblyOffensive: Boolean,
         isPrivateSession: Boolean,
     ): SpellingResult {
-        return when (word.lowercase()) {
-            // Use typo for typing errors
-            "typo" -> SpellingResult.typo(arrayOf("typo1", "typo2", "typo3"))
-            // Use grammar error if the algorithm can detect this. On Android 11 and lower grammar errors are visually
-            // marked as typos due to a lack of support
-            "gerror" -> SpellingResult.grammarError(arrayOf("grammar1", "grammar2", "grammar3"))
-            // Use valid word for valid input
-            else -> SpellingResult.validWord()
+        val lower = word.lowercase()
+        return wordData.withLock { dict ->
+            if (dict.containsKey(lower)) {
+                SpellingResult.validWord()
+            } else {
+                // Find closest words by edit distance
+                val suggestions = findClosestWords(lower, maxSuggestionCount, dict)
+                if (suggestions.isEmpty()) {
+                    SpellingResult.validWord() // No suggestions — treat as valid (names, etc.)
+                } else {
+                    SpellingResult.typo(suggestions.toTypedArray())
+                }
+            }
         }
     }
 
@@ -105,21 +101,89 @@ class LatinLanguageProvider(context: Context) : SpellingProvider, SuggestionProv
         allowPossiblyOffensive: Boolean,
         isPrivateSession: Boolean,
     ): List<SuggestionCandidate> {
-        return emptyList()
-        /*val word = content.composingText.ifBlank { "next" }
-        val suggestions = buildList {
-            for (n in 0 until maxCandidateCount) {
-                add(WordSuggestionCandidate(
-                    text = "$word$n",
-                    secondaryText = if (n % 2 == 1) "secondary" else null,
-                    confidence = 0.5,
-                    isEligibleForAutoCommit = false,//n == 0 && word.startsWith("auto"),
-                    // We set ourselves as the source provider so we can get notify events for our candidate
+        val composingText = (content.compositionText ?: "").trim()
+        if (composingText.isEmpty() || composingText.length < 2) return emptyList()
+
+        val lower = composingText.lowercase()
+        return wordData.withLock { dict ->
+            // If the word is already correct, don't suggest corrections
+            if (dict.containsKey(lower)) return@withLock emptyList()
+
+            val suggestions = findClosestWords(lower, maxCandidateCount, dict)
+            if (suggestions.isEmpty()) return@withLock emptyList()
+
+            suggestions.mapIndexed { index, suggestion ->
+                val confidence = 1.0 - (index + 1) * 0.15 // top = 0.85, second = 0.70, etc.
+                WordSuggestionCandidate(
+                    text = suggestion,
+                    secondaryText = null,
+                    confidence = confidence.coerceIn(0.0, 1.0),
+                    // Only the top suggestion is eligible for auto-commit (space key autocorrect)
+                    isEligibleForAutoCommit = index == 0 && confidence >= MIN_AUTOCONFIDENCE,
                     sourceProvider = this@LatinLanguageProvider,
-                ))
+                )
             }
         }
-        return suggestions*/
+    }
+
+    /**
+     * Find closest words to [word] in [dict] using Levenshtein edit distance.
+     * Returns words within MAX_EDIT_DISTANCE, sorted by (distance asc, frequency desc).
+     * Filters by length similarity to avoid absurd suggestions for very short words.
+     */
+    private fun findClosestWords(
+        word: String,
+        maxCount: Int,
+        dict: Map<String, Int>,
+    ): List<String> {
+        val candidates = mutableListOf<Pair<String, Int>>() // (word, distance)
+
+        for (entry in dict) {
+            val candidate = entry.key
+            // Quick length filter: edit distance can't be less than length difference
+            val lenDiff = kotlin.math.abs(candidate.length - word.length)
+            if (lenDiff > MAX_EDIT_DISTANCE) continue
+
+            val dist = levenshtein(word, candidate)
+            if (dist <= MAX_EDIT_DISTANCE && dist > 0) {
+                candidates.add(candidate to dist)
+            }
+        }
+
+        // Sort by distance (primary), then by frequency (secondary — higher freq first)
+        return candidates
+            .sortedWith(compareBy({ it.second }, { -dict[it.first]!! }))
+            .take(maxCount)
+            .map { it.first }
+    }
+
+    /**
+     * Classic Levenshtein edit distance between two strings.
+     * Optimized for short strings (typical word length 3-12 chars).
+     */
+    private fun levenshtein(a: String, b: String): Int {
+        val n = a.length
+        val m = b.length
+        if (n == 0) return m
+        if (m == 0) return n
+
+        // Use two rows for memory efficiency
+        var prev = IntArray(m + 1) { it }
+        var curr = IntArray(m + 1)
+
+        for (i in 1..n) {
+            curr[0] = i
+            for (j in 1..m) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                curr[j] = minOf(
+                    prev[j] + 1,      // deletion
+                    curr[j - 1] + 1,  // insertion
+                    prev[j - 1] + cost // substitution
+                )
+            }
+            val tmp = prev; prev = curr; curr = tmp
+        }
+        return prev[m]
     }
 
     override suspend fun notifySuggestionAccepted(subtype: Subtype, candidate: SuggestionCandidate) {

@@ -253,13 +253,14 @@ object TranslationManager {
             "EN" -> "English"
             else -> targetLang
         }
-        val prompt = "You are a native bilingual translator who grew up speaking both English and $langName. You're translating a casual text message from someone texting a friend.\n\n" +
-            "Your goal: the person receiving this should feel like it was written by a native $langName speaker, not translated. Here's how:\n\n" +
-            "1. Match the TONE and REGISTER exactly — if the English is casual/slangy/playful/frustrated, the translation should feel the same way in $langName.\n" +
-            "2. Find CULTURAL EQUIVALENTS for slang and idioms — don't translate literally. If they say something that doesn't exist as-is in $langName culture, find the closest equivalent that carries the same feeling and social weight.\n" +
-            "3. Keep it conversational and natural — like how people actually text in $langName, not textbook language.\n" +
-            "4. If there's a well-known $langName saying or phrase that captures the same meaning as an English idiom, use it instead.\n\n" +
-            "Respond with ONLY the translation, nothing else:\n\n$text"
+        val prompt = "You ARE a native $langName speaker who grew up in a $langName-speaking city. You're not translating — you're rewriting what this person meant to say, as if YOU were texting your own friend.\n\n" +
+            "Rules:\n" +
+            "1. Write how a LOCAL actually texts. Not textbook, not polite-formal. Real texting — the way someone your age talks to a friend on WeChat or WhatsApp.\n" +
+            "2. Slang, internet language, abbreviations, emojis if the vibe fits — use what a local would use. If the English is casual and slangy, match that energy in $langName.\n" +
+            "3. DON'T translate idioms literally. Find the $langName equivalent that hits the same feeling. If someone says 'that's sick' in English, don't translate to something about illness — find what a $langName speaker says when they think something is cool/impressive.\n" +
+            "4. Match the emotional register exactly. Angry, teasing, sweet, dismissive, excited — same energy in $langName. Use particles and tone markers naturally ($langName specific: 啊/了/呢/吧 for Chinese, etc.).\n" +
+            "5. If the English has typos, fast-typing shorthand, or missing punctuation — replicate that casual energy. Don't clean it up into formal writing.\n\n" +
+            "Respond with ONLY the $langName text, nothing else:\n\n$text"
         val body = JSONObject().apply {
             put("model", OLLAMA_MODEL)
             put("messages", JSONArray().apply {

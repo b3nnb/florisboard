@@ -106,7 +106,9 @@ class FlorisApplication : Application() {
 
             storageController = AndroidStorageController(this)
             extensionController = ExtensionController(storageController)
-            imeController = ImeController(storageController, clipboardManager.value)
+            imeController = ImeController(storageController, clipboardManager.value).also {
+                it.nlpManager = nlpManager.value
+            }
             themeController = ThemeController(
                 storageController,
                 extensionController,

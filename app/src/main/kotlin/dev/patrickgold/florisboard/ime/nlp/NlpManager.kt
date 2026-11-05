@@ -191,6 +191,9 @@ class NlpManager(context: Context) {
             || prefs.emoji.suggestionEnabled.get()
             || providerForcesSuggestionOn(subtypeManager.activeSubtype)
 
+    /** Active subtype for the current keyboard layout. Used by ImeController for suggest() calls. */
+    val activeSubtype get() = subtypeManager.activeSubtype
+
     fun suggest(subtype: Subtype, content: K3Content) {
         val reqTime = SystemClock.uptimeMillis()
         scope.launch {

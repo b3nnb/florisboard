@@ -44,6 +44,7 @@ import dev.patrickgold.florisboard.ime.keyboard3.touch.TouchModelOptions
 import dev.patrickgold.florisboard.ime.media.emoji.EmojiSuggestionType
 import dev.patrickgold.florisboard.ime.nlp.BreakIterators
 import dev.patrickgold.florisboard.ime.nlp.ClipboardSuggestionCandidate
+import dev.patrickgold.florisboard.ime.nlp.NlpManager
 import dev.patrickgold.florisboard.ime.nlp.SuggestionCandidate
 import dev.patrickgold.florisboard.ime.text.key.KeyVariation
 import dev.patrickgold.florisboard.ime.translation.TranslationManager
@@ -94,6 +95,9 @@ class ImeController(
     private val breakIterators = BreakIterators()
     private val expectedContentQueue = ExpectedContentQueue()
     private var emitInterceptor = AtomicReference<EmitInterceptor?>(null)
+
+    // Set by FlorisApplication after construction — used for autocorrect suggestions
+    lateinit var nlpManager: NlpManager
 
     val activeTouchModelOptions = combine<Any, TouchModelOptions>(
         prefs.keyboard.numberRow.asFlow(),
@@ -318,6 +322,21 @@ class ImeController(
         }
 
         override fun emitText(value: K3String) {
+            // Autocorrect: when space is pressed and there's an auto-commit candidate,
+            // replace the composing word with the correction before emitting the space.
+            val textStr = value.toString()
+            if (textStr == " " && state.flags.isComposingEnabled) {
+                try {
+                    if (::nlpManager.isInitialized) {
+                        val autoCandidate = nlpManager.getAutoCommitCandidate()
+                        if (autoCandidate != null) {
+                            emitCompletion(autoCandidate)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Autocorrect is best-effort — don't block typing
+                }
+            }
             super.emitText(value)
             expectedContentQueue.push(state.content)
             reevaluateInputShiftState()
@@ -520,23 +539,30 @@ class ImeController(
         fun emitCompletion(candidate: SuggestionCandidate): Boolean {
             val text = candidate.text.toString()
             if (text.isEmpty() || state.editor.info.isRawInputEditor) return false
-//            val content = activeContent
-//            return if (content.composing.isValid) {
-//                phantomSpace.setActive(showComposingRegion = false, candidate = candidate)
-//                super.finalizeComposingText(text)
-//            } else {
-//                val isPhantomSpaceActive = phantomSpace.determine(text)
-//                phantomSpace.setActive(showComposingRegion = false, candidate = candidate)
-//                return if (isPhantomSpaceActive) {
-//                    super.commitText("$SPACE$text")
-//                } else {
-//                    super.commitText(text)
-//                }.also {
-//                    // handled in finalizeComposingText if content.composing.isValid
-//                    updateLastCommitPosition()
-//                }
-//            }
-            return false
+
+            // Get the text before the cursor and find the last word (the composing word)
+            val textBefore = state.content.surroundingText.textBefore
+            if (textBefore.isEmpty()) return false
+
+            // Find the last word boundary — scan backwards from the end of textBefore
+            // to find where the current word starts
+            var end = textBefore.length
+            var start = end
+            while (start > 0 && !textBefore[start - 1].isWhitespace()) {
+                start--
+            }
+            if (start == end) return false // No word found
+
+            // Replace the composing word with the correction via InputConnection
+            val ic = state.editor.ic.get() ?: return false
+            ic.beginBatchEdit()
+            ic.setComposingRegion(start, end)
+            ic.commitText(text, 1)
+            ic.endBatchEdit()
+
+            // Clear suggestions — the correction is committed
+            try { if (::nlpManager.isInitialized) nlpManager.clearSuggestions() } catch (_: Exception) {}
+            return true
         }
 
         override fun switchTouchLayer(newTouchLayerId: K3LayerId) {
@@ -603,6 +629,14 @@ class ImeController(
         override fun resetContent(newSelection: K3TextRange, newSurrounding: K3SurroundingText) {
             super.resetContent(newSelection, newSurrounding)
             reevaluateInputShiftState()
+            // Trigger NLP suggestions for the new composing text (enables autocorrect)
+            try {
+                if (::nlpManager.isInitialized && nlpManager.isSuggestionOn()) {
+                    nlpManager.suggest(nlpManager.activeSubtype, state.content)
+                }
+            } catch (e: Exception) {
+                // NLP suggest is best-effort — don't crash the keyboard
+            }
         }
 
         override fun resetContent() {
