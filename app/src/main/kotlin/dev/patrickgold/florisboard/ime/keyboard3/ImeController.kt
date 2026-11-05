@@ -322,14 +322,56 @@ class ImeController(
         }
 
         override fun emitText(value: K3String) {
-            // Autocorrect: when space is pressed and there's an auto-commit candidate,
-            // replace the composing word with the correction before emitting the space.
+            // Autocorrect: when space is pressed, check the last word against the
+            // dictionary and replace if there's a close match. This runs
+            // synchronously (runBlocking) so the correction lands before the space.
             val textStr = value.toString()
-            if (textStr == " " && state.flags.isComposingEnabled) {
+            if (textStr == " ") {
                 try {
                     if (::nlpManager.isInitialized) {
-                        val autoCandidate = nlpManager.getAutoCommitCandidate()
-                        if (autoCandidate != null) {
+                        // First try the async candidates (may already be ready)
+                        var autoCandidate = nlpManager.getAutoCommitCandidate()
+                        if (autoCandidate == null) {
+                            // Async candidates not ready — compute synchronously
+                            val textBefore = state.content.surroundingText.textBefore
+                            if (textBefore.isNotEmpty()) {
+                                // Find the last word
+                                var wordEnd = textBefore.length
+                                var wordStart = wordEnd
+                                while (wordStart > 0 && !textBefore[wordStart - 1].isWhitespace()) {
+                                    wordStart--
+                                }
+                                if (wordStart < wordEnd && wordEnd - wordStart >= 2) {
+                                    val lastWord = textBefore.substring(wordStart, wordEnd)
+                                    val lowerWord = lastWord.lowercase()
+                                    // Only correct if the word isn't already in the dictionary
+                                    val words = runBlocking { nlpManager.getListOfWords(nlpManager.activeSubtype) }
+                                    val isInDict = words.any { it.equals(lowerWord, ignoreCase = true) }
+                                    if (!isInDict) {
+                                        // Get spell suggestions synchronously
+                                        val spellResult = runBlocking {
+                                            nlpManager.spell(
+                                                nlpManager.activeSubtype,
+                                                lowerWord,
+                                                emptyList(), emptyList(), 3,
+                                            )
+                                        }
+                                        val suggestions = spellResult.suggestions()
+                                        if (suggestions.isNotEmpty()) {
+                                            val best = suggestions[0]
+                                            val ic = state.editor.ic.get()
+                                            if (ic != null) {
+                                                ic.beginBatchEdit()
+                                                ic.setComposingRegion(wordStart, wordEnd)
+                                                ic.commitText(best, 1)
+                                                ic.endBatchEdit()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Async candidate was ready — use it
                             emitCompletion(autoCandidate)
                         }
                     }
@@ -630,8 +672,10 @@ class ImeController(
             super.resetContent(newSelection, newSurrounding)
             reevaluateInputShiftState()
             // Trigger NLP suggestions for the new composing text (enables autocorrect)
+            // Always call suggest even if prefs say suggestions are off — autocorrect
+            // should work regardless of the suggestion bar visibility setting
             try {
-                if (::nlpManager.isInitialized && nlpManager.isSuggestionOn()) {
+                if (::nlpManager.isInitialized) {
                     nlpManager.suggest(nlpManager.activeSubtype, state.content)
                 }
             } catch (e: Exception) {

@@ -78,6 +78,13 @@ object TranslationManager {
     private val _previewText = MutableStateFlow("")
     val previewText: StateFlow<String> = _previewText.asStateFlow()
 
+    // Cache the last translated text to avoid re-translating on cursor moves
+    // (textBefore changes when cursor moves even if the text didn't)
+    private var lastTranslatedInput = ""
+    private var lastTranslationResult = ""
+    private val translationDebounce = android.os.SystemClock.uptimeMillis()
+    private var lastTranslationTime = 0L
+
     private fun initialized(): Boolean = ::prefs.isInitialized
 
     /**
@@ -141,13 +148,25 @@ object TranslationManager {
         if (!initialized()) return
         if (text.isBlank()) {
             _previewText.value = ""
+            lastTranslatedInput = ""
+            lastTranslationResult = ""
+            return
+        }
+        // Skip if the text hasn't actually changed (cursor move, not edit).
+        // Compare the trimmed content — spaces/cursor position shouldn't trigger.
+        if (text.trim() == lastTranslatedInput) {
+            if (_translateOn.value) _previewText.value = lastTranslationResult
             return
         }
         val lang = _targetLang.value
         scope.launch {
             try {
                 val translated = translateDeepL(text, lang)
-                if (_translateOn.value) _previewText.value = translated
+                if (_translateOn.value) {
+                    lastTranslatedInput = text.trim()
+                    lastTranslationResult = translated
+                    _previewText.value = translated
+                }
             } catch (_: Exception) {
                 if (_translateOn.value) _previewText.value = "…"
             }
