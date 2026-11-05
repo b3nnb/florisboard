@@ -36,7 +36,7 @@ class WhatsAppTranslateOverlay : AccessibilityService() {
 
     companion object {
         private const val TAG = "WATranslateOverlay"
-        private const val OLLAMA_URL = "http://10.2.0.182:11434/api/chat"
+        private const val OLLAMA_URL = "http://10.2.0.102:11434/api/chat"
         private const val OLLAMA_MODEL = "qwen3.5:9b"
     }
 
@@ -112,7 +112,7 @@ class WhatsAppTranslateOverlay : AccessibilityService() {
         }
 
         Log.i(TAG, "Screen messages: ${messages.size} (${messages.count { it.isMine }} mine, ${messages.count { !it.isMine }} theirs)")
-        return messages.takeLast(15) // most recent 15 messages
+        return messages.takeLast(4) // last 4 messages only
     }
 
     private fun translateScreen() {
@@ -245,57 +245,84 @@ class WhatsAppTranslateOverlay : AccessibilityService() {
         hideResult()
 
         val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
         val cardWidth = (screenWidth * 0.92).toInt()
+        val maxCardHeight = (screenHeight * 0.45).toInt() // cap at 45% of screen height
 
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0xFF202022.toInt())
-            setPadding(24, 32, 24, 32)
+            setPadding(24, 16, 24, 24)
         }
 
-        // Header
+        // Top bar: header + close button (always visible)
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 12
+            }
+            this.layoutParams = lp
+        }
+
         val header = TextView(this).apply {
             text = "EN Translation"
             setTextColor(0xFF8AB4F8.toInt())
             textSize = 12f
-            setPadding(8, 0, 8, 16)
-        }
-        card.addView(header)
-
-        if (messages.isEmpty()) {
-            // Loading state
-            val loading = TextView(this).apply {
-                text = loadingText
-                setTextColor(0xFF888888.toInt())
-                textSize = 14f
-                setPadding(8, 16, 8, 16)
-            }
-            card.addView(loading)
-        } else {
-            // Chat-style message list
-            for (msg in messages) {
-                val bubble = createMessageBubble(msg)
-                card.addView(bubble)
-            }
+            setPadding(8, 0, 8, 0)
+            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            this.layoutParams = lp
         }
 
-        // Close button
         val closeButton = Button(this).apply {
-            text = "✕ Close"
-            textSize = 11f
+            text = "✕"
+            textSize = 12f
             setBackgroundColor(0xFF363639.toInt())
             setTextColor(0xFFFFFFFF.toInt())
             setOnClickListener { hideResult() }
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.END
-                topMargin = 20
-            }
+            )
             this.layoutParams = lp
         }
-        card.addView(closeButton)
+
+        topBar.addView(header)
+        topBar.addView(closeButton)
+        card.addView(topBar)
+
+        // Scrollable message area (capped height)
+        val scrollArea = android.widget.ScrollView(this).apply {
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                maxCardHeight
+            )
+            this.layoutParams = lp
+        }
+
+        val messageList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        if (messages.isEmpty()) {
+            val loading = TextView(this).apply {
+                text = loadingText
+                setTextColor(0xFF888888.toInt())
+                textSize = 14f
+                setPadding(8, 16, 8, 16)
+            }
+            messageList.addView(loading)
+        } else {
+            for (msg in messages) {
+                val bubble = createMessageBubble(msg)
+                messageList.addView(bubble)
+            }
+        }
+
+        scrollArea.addView(messageList)
+        card.addView(scrollArea)
 
         val params = WindowManager.LayoutParams(
             cardWidth,

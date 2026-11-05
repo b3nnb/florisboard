@@ -56,7 +56,7 @@ object TranslationManager {
 
     // Backend endpoints.
     private const val DEEPL_API_URL = "https://api-free.deepl.com/v2/translate"
-    private const val OLLAMA_URL = "http://10.2.0.182:11434/api/chat"
+    private const val OLLAMA_URL = "http://10.2.0.102:11434/api/chat"
     private const val OLLAMA_MODEL = "qwen3.5:9b"
     private const val OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
