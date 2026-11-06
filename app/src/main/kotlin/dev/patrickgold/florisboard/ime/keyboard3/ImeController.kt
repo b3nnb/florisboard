@@ -328,16 +328,14 @@ class ImeController(
 
         override fun emitText(value: K3String) {
             android.util.Log.i("Autocorrect", "emitText: '${value.toText()}'")
-            // Autocorrect: when space is pressed, correct the last word BEFORE
-            // committing the space. At this point the cursor is right after the
-            // word (before the space), so deleteSurroundingText(wordLen, 0)
-            // correctly deletes just the misspelled word.
+            // Autocorrect: when space is pressed, correct the last word and
+            // commit correction + space together in one batch edit, then skip
+            // super.emitText() to prevent it from overwriting the correction.
             val textStr = value.toText()
             if (textStr == " ") {
                 try {
                     if (Autocorrect.isLoaded()) {
                         val textBefore = state.content.surroundingText.textBefore
-                        android.util.Log.i("Autocorrect", "space! before='$textBefore' loaded=${Autocorrect.isLoaded()}")
                         if (textBefore.isNotEmpty()) {
                             var wordEnd = textBefore.length
                             var wordStart = wordEnd
@@ -354,8 +352,13 @@ class ImeController(
                                         val wordLen = wordEnd - wordStart
                                         ic.beginBatchEdit()
                                         ic.deleteSurroundingText(wordLen, 0)
-                                        ic.commitText(correction, 1)
+                                        ic.commitText(correction + " ", 1)
                                         ic.endBatchEdit()
+                                        android.util.Log.i("Autocorrect", "correction+space applied: '${ic.getTextBeforeCursor(100, 0)}'")
+                                        // Skip super.emitText() — we handled the space
+                                        expectedContentQueue.push(state.content)
+                                        reevaluateInputShiftState()
+                                        return
                                     }
                                 }
                             }
