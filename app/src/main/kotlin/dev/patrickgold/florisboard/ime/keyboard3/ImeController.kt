@@ -326,8 +326,44 @@ class ImeController(
         }
 
         override fun emitText(value: K3String) {
-            // Autocorrect is handled in onUpdateCursorAnchorInfo (FlorisImeService)
-            // to avoid double-correction. Just pass through to super.
+            android.util.Log.i("Autocorrect", "emitText: '${value.toText()}'")
+            // Autocorrect: when space is pressed, correct the last word BEFORE
+            // committing the space. At this point the cursor is right after the
+            // word (before the space), so deleteSurroundingText(wordLen, 0)
+            // correctly deletes just the misspelled word.
+            val textStr = value.toText()
+            if (textStr == " ") {
+                try {
+                    if (Autocorrect.isLoaded()) {
+                        val textBefore = state.content.surroundingText.textBefore
+                        android.util.Log.i("Autocorrect", "space! before='$textBefore' loaded=${Autocorrect.isLoaded()}")
+                        if (textBefore.isNotEmpty()) {
+                            var wordEnd = textBefore.length
+                            var wordStart = wordEnd
+                            while (wordStart > 0 && !textBefore[wordStart - 1].isWhitespace()) {
+                                wordStart--
+                            }
+                            if (wordStart < wordEnd && wordEnd - wordStart >= 2) {
+                                val lastWord = textBefore.substring(wordStart, wordEnd)
+                                val correction = Autocorrect.correct(lastWord)
+                                if (correction != null && correction != lastWord.lowercase()) {
+                                    android.util.Log.i("Autocorrect", "correcting '$lastWord' → '$correction'")
+                                    val ic = state.editor.ic.get()
+                                    if (ic != null) {
+                                        val wordLen = wordEnd - wordStart
+                                        ic.beginBatchEdit()
+                                        ic.deleteSurroundingText(wordLen, 0)
+                                        ic.commitText(correction, 1)
+                                        ic.endBatchEdit()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("Autocorrect", "Error: ${e.message}", e)
+                }
+            }
             super.emitText(value)
             expectedContentQueue.push(state.content)
             reevaluateInputShiftState()
