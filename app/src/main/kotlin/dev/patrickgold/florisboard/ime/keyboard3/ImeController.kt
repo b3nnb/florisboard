@@ -317,7 +317,6 @@ class ImeController(
         }
 
         override fun emit(value: K3StringOrDescriptor) {
-            android.util.Log.i("Autocorrect", "emit(): $value type=${value::class.simpleName}")
             val interceptor = emitInterceptor.load()
             if (interceptor != null) {
                 interceptor.onEmit(value)
@@ -327,7 +326,6 @@ class ImeController(
         }
 
         override fun emitText(value: K3String) {
-            android.util.Log.i("Autocorrect", "emitText: '${value.toText()}'")
             // Autocorrect: when space is pressed, correct the last word and
             // commit correction + space together in one batch edit, then skip
             // super.emitText() to prevent it from overwriting the correction.
@@ -360,7 +358,6 @@ class ImeController(
                                         } else {
                                             correction
                                         }
-                                        android.util.Log.i("Autocorrect", "correcting '$lastWord' → '$finalCorrection'")
                                         val ic = state.editor.ic.get()
                                         if (ic != null) {
                                             val wordLen = wordEnd - wordStart
@@ -368,7 +365,6 @@ class ImeController(
                                             ic.deleteSurroundingText(wordLen, 0)
                                             ic.commitText(finalCorrection + trailingPunct + " ", 1)
                                             ic.endBatchEdit()
-                                            android.util.Log.i("Autocorrect", "correction+space applied: '${ic.getTextBeforeCursor(100, 0)}'")
                                             expectedContentQueue.push(state.content)
                                             reevaluateInputShiftState()
                                             return
@@ -379,7 +375,7 @@ class ImeController(
                         }
                     }
                 } catch (e: Exception) {
-                    android.util.Log.e("Autocorrect", "Error: ${e.message}", e)
+                    // Autocorrect is best-effort — don't crash the keyboard
                 }
             }
             super.emitText(value)
