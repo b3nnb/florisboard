@@ -48,6 +48,7 @@ import dev.patrickgold.florisboard.ime.ImeUiMode
 import dev.patrickgold.florisboard.ime.editor.FlorisEditorInfo
 import dev.patrickgold.florisboard.ime.keyboard3.isFullscreenInputRequired
 import dev.patrickgold.florisboard.ime.keyboard3.ImeEditor
+import dev.patrickgold.florisboard.ime.text.Autocorrect
 import dev.patrickgold.florisboard.ime.landscapeinput.ExtractedInputRootView
 import dev.patrickgold.florisboard.ime.landscapeinput.LandscapeInputUiMode
 import dev.patrickgold.florisboard.ime.lifecycle.LifecycleInputMethodService
@@ -89,6 +90,9 @@ private var FlorisImeServiceReference = WeakReference<FlorisImeService?>(null)
  * up the window and context to be lifecycle-aware, so LiveData and Jetpack Compose can be used without issues.
  */
 class FlorisImeService : LifecycleInputMethodService() {
+
+    // Autocorrect: track previous text-before-cursor length to detect space-typing
+    private var prevTextBeforeLen = 0
     companion object {
         private val InlineSuggestionUiSmallestSize = Size(0, 0)
         private val InlineSuggestionUiBiggestSize = Size(Int.MAX_VALUE, Int.MAX_VALUE)
@@ -393,6 +397,45 @@ class FlorisImeService : LifecycleInputMethodService() {
         flogInfo { "new=$newSelection" }
         imeController.updateStateBlocking {
             handleUpdateSelection(newSelection)
+        }
+        // Autocorrect: after cursor update, check if a space was just typed
+        // and correct the word before it. We detect space-typing by comparing
+        // the text length with the previous update — if it grew, it's typing;
+        // if it shrank or stayed same, it's a cursor move or deletion.
+        try {
+            val ic = currentInputConnection
+            if (ic != null && Autocorrect.isLoaded()) {
+                val textBefore = ic.getTextBeforeCursor(1000, 0)?.toString().orEmpty()
+                if (textBefore.isNotEmpty() && textBefore.last() == ' '
+                    && textBefore.length > prevTextBeforeLen
+                    && textBefore.length - prevTextBeforeLen <= 3
+                ) {
+                    // Space was just typed — find the word before it and correct
+                    val beforeSpace = textBefore.dropLast(1)
+                    if (beforeSpace.isNotEmpty()) {
+                        var wordEnd = beforeSpace.length
+                        var wordStart = wordEnd
+                        while (wordStart > 0 && !beforeSpace[wordStart - 1].isWhitespace()) {
+                            wordStart--
+                        }
+                        if (wordStart < wordEnd && wordEnd - wordStart >= 2) {
+                            val lastWord = beforeSpace.substring(wordStart, wordEnd)
+                            val correction = Autocorrect.correct(lastWord)
+                            if (correction != null && correction != lastWord.lowercase()) {
+                                android.util.Log.i("Autocorrect", "correcting '$lastWord' → '$correction'")
+                                val wordLen = wordEnd - wordStart
+                                ic.beginBatchEdit()
+                                ic.deleteSurroundingText(wordLen, 0)
+                                ic.commitText(correction, 1)
+                                ic.endBatchEdit()
+                            }
+                        }
+                    }
+                }
+                prevTextBeforeLen = textBefore.length
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("Autocorrect", "Error: ${e.message}", e)
         }
     }
 

@@ -326,6 +326,7 @@ class ImeController(
         }
 
         override fun emitText(value: K3String) {
+            android.util.Log.i("Autocorrect", "emitText: '${value.toText()}'")
             // Autocorrect: when space is pressed, correct the last word BEFORE
             // committing the space. Uses deleteSurroundingText to remove the
             // misspelled word and commitText to insert the correction, then
@@ -335,6 +336,7 @@ class ImeController(
                 try {
                     if (Autocorrect.isLoaded()) {
                         val textBefore = state.content.surroundingText.textBefore
+                        android.util.Log.i("Autocorrect", "space! textBefore='$textBefore' dict=${Autocorrect.dictSize()}")
                         if (textBefore.isNotEmpty()) {
                             // Find the last word before the cursor
                             var wordEnd = textBefore.length
