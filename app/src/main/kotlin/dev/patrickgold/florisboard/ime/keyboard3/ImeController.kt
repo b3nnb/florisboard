@@ -317,6 +317,7 @@ class ImeController(
         }
 
         override fun emit(value: K3StringOrDescriptor) {
+            android.util.Log.i("Autocorrect", "emit(): $value type=${value::class.simpleName}")
             val interceptor = emitInterceptor.load()
             if (interceptor != null) {
                 interceptor.onEmit(value)
