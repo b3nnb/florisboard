@@ -65,25 +65,25 @@ object Autocorrect {
 
         val currentFreq = dictionary[lower] ?: 0
 
-        // If the word is in the dictionary with high frequency, don't correct it
-        // (it's likely a valid word, not a misspelling)
+        // If the word is in the dictionary with high frequency (>200), it's
+        // likely a valid word, not a misspelling. Don't correct it.
         if (currentFreq > 200) return null
 
         var bestMatch: String? = null
-        var bestDist = MAX_EDIT_DISTANCE + 1
         var bestFreq = 0
 
         for ((candidate, freq) in dictionary) {
             val lenDiff = Math.abs(candidate.length - lower.length)
-            if (lenDiff > MAX_EDIT_DISTANCE) continue
-            if (candidate == lower) continue // skip exact match
+            if (lenDiff > 1) continue
+            if (candidate == lower) continue
 
-            val dist = levenshtein(lower, candidate)
-            // Only correct if the candidate has significantly higher frequency
-            // (at least 2x the current word's frequency)
-            if (dist == 1 && freq > currentFreq * 2) {
-                if (dist < bestDist || (dist == bestDist && freq > bestFreq)) {
-                    bestDist = dist
+            // Use Damerau-Levenshtein (transposition = 1 operation)
+            // so "teh" → "the" is distance 1, not 2
+            val dist = damerauLevenshtein(lower, candidate)
+            // Only correct edit distance 1 (single typo: transposition,
+            // insertion, deletion, or substitution)
+            if (dist == 1 && freq > currentFreq) {
+                if (freq > bestFreq) {
                     bestFreq = freq
                     bestMatch = candidate
                 }
@@ -93,23 +93,26 @@ object Autocorrect {
         return bestMatch
     }
 
-    private fun levenshtein(a: String, b: String): Int {
+    private fun damerauLevenshtein(a: String, b: String): Int {
         val n = a.length
         val m = b.length
         if (n == 0) return m
         if (m == 0) return n
 
-        var prev = IntArray(m + 1) { it }
-        var curr = IntArray(m + 1)
+        val d = Array(n + 1) { IntArray(m + 1) }
+        for (i in 0..n) d[i][0] = i
+        for (j in 0..m) d[0][j] = j
 
         for (i in 1..n) {
-            curr[0] = i
             for (j in 1..m) {
                 val cost = if (a[i - 1] == b[j - 1]) 0 else 1
-                curr[j] = minOf(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+                d[i][j] = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+                // Transposition check
+                if (i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1]) {
+                    d[i][j] = minOf(d[i][j], d[i - 2][j - 2] + 1)
+                }
             }
-            val tmp = prev; prev = curr; curr = tmp
         }
-        return prev[m]
+        return d[n][m]
     }
 }
