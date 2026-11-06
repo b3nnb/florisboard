@@ -65,18 +65,23 @@ object Autocorrect {
 
         val currentFreq = dictionary[lower] ?: 0
 
+        // If the word is in the dictionary with high frequency, don't correct it
+        // (it's likely a valid word, not a misspelling)
+        if (currentFreq > 200) return null
+
         var bestMatch: String? = null
         var bestDist = MAX_EDIT_DISTANCE + 1
-        var bestFreq = currentFreq // must be better than current
+        var bestFreq = 0
 
         for ((candidate, freq) in dictionary) {
             val lenDiff = Math.abs(candidate.length - lower.length)
             if (lenDiff > MAX_EDIT_DISTANCE) continue
-            if (candidate == lower) continue // skip self
+            if (candidate == lower) continue // skip exact match
 
             val dist = levenshtein(lower, candidate)
-            if (dist in 1..MAX_EDIT_DISTANCE) {
-                // Prefer lower edit distance, then higher frequency
+            // Only correct if the candidate has significantly higher frequency
+            // (at least 2x the current word's frequency)
+            if (dist == 1 && freq > currentFreq * 2) {
                 if (dist < bestDist || (dist == bestDist && freq > bestFreq)) {
                     bestDist = dist
                     bestFreq = freq
