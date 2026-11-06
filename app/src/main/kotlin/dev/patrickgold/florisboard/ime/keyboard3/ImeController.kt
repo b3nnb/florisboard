@@ -331,6 +331,14 @@ class ImeController(
             // super.emitText() to prevent it from overwriting the correction.
             val textStr = value.toText()
             if (textStr == " ") {
+                // If user just backspaced into a corrected word, don't re-correct
+                if (suppressNextCorrection) {
+                    suppressNextCorrection = false
+                    super.emitText(value)
+                    expectedContentQueue.push(state.content)
+                    reevaluateInputShiftState()
+                    return
+                }
                 try {
                     if (Autocorrect.isLoaded()) {
                         val textBefore = state.content.surroundingText.textBefore
@@ -377,11 +385,18 @@ class ImeController(
                 } catch (e: Exception) {
                     // Autocorrect is best-effort — don't crash the keyboard
                 }
+            } else if (textStr.isNotEmpty()) {
+                // User typed a character — reset suppress flag
+                suppressNextCorrection = false
             }
             super.emitText(value)
             expectedContentQueue.push(state.content)
             reevaluateInputShiftState()
         }
+
+        // Track whether to suppress the next autocorrect (set when user
+        // backspaces — allows editing a corrected word without re-correction)
+        private var suppressNextCorrection = false
 
         override fun emitDescriptor(descriptor: K3Descriptor) {
             val windowController = FlorisImeService.windowControllerOrNull()
@@ -482,6 +497,9 @@ class ImeController(
         }
 
         override fun emitBackspace() {
+            // User is editing — suppress next autocorrect so they can
+            // edit a corrected word without it re-correcting
+            suppressNextCorrection = true
             super.emitBackspace()
             expectedContentQueue.push(state.content)
         }

@@ -63,6 +63,9 @@ object Autocorrect {
         val lower = word.lowercase()
         if (lower.length < MIN_WORD_LENGTH) return null
 
+        // Check contractions first (e.g. "youre" → "you're")
+        CONTRACTIONS[lower]?.let { return it }
+
         val currentFreq = dictionary[lower] ?: 0
 
         // If the word is in the dictionary with high frequency (>200), it's
@@ -72,17 +75,23 @@ object Autocorrect {
         var bestMatch: String? = null
         var bestFreq = 0
 
+        // For known words (in dict with low freq), require correction to have
+        // 1.5x the frequency (filters out abbreviations like "msg" → "ms").
+        // For unknown words (not in dict), require correction freq > 220
+        // (very common words only — prevents correcting proper nouns/slang).
+        val minCorrectionFreq = if (currentFreq > 0) {
+            (currentFreq * 1.5).toInt() + 1
+        } else {
+            220
+        }
+
         for ((candidate, freq) in dictionary) {
             val lenDiff = Math.abs(candidate.length - lower.length)
             if (lenDiff > 1) continue
             if (candidate == lower) continue
 
-            // Use Damerau-Levenshtein (transposition = 1 operation)
-            // so "teh" → "the" is distance 1, not 2
             val dist = damerauLevenshtein(lower, candidate)
-            // Only correct edit distance 1 (single typo: transposition,
-            // insertion, deletion, or substitution)
-            if (dist == 1 && freq > currentFreq) {
+            if (dist == 1 && freq >= minCorrectionFreq) {
                 if (freq > bestFreq) {
                     bestFreq = freq
                     bestMatch = candidate
@@ -92,6 +101,25 @@ object Autocorrect {
 
         return bestMatch
     }
+
+    private val CONTRACTIONS = mapOf(
+        "youre" to "you're", "dont" to "don't", "cant" to "can't",
+        "wont" to "won't", "im" to "i'm", "ive" to "i've",
+        "youve" to "you've", "theyre" to "they're", "whats" to "what's",
+        "wheres" to "where's", "isnt" to "isn't", "wasnt" to "wasn't",
+        "arent" to "aren't", "wouldnt" to "wouldn't", "couldnt" to "couldn't",
+        "shouldnt" to "shouldn't", "didnt" to "didn't", "doesnt" to "doesn't",
+        "hasnt" to "hasn't", "havent" to "haven't", "hadnt" to "hadn't",
+        "thats" to "that's", "heres" to "here's", "theres" to "there's",
+        "lets" to "let's", "shell" to "she'll", "hell" to "he'll",
+        "well" to "we'll", "ill" to "i'll", "youll" to "you'll",
+        "theyll" to "they'll", "shes" to "she's", "hes" to "he's",
+        "werent" to "weren't", "couldve" to "could've",
+        "wouldve" to "would've", "shouldve" to "should've",
+        "mightve" to "might've", "mustve" to "must've",
+        "hes" to "he's", "shes" to "she's", "its" to "it's",
+        "wasnt" to "wasn't", "werent" to "weren't",
+    )
 
     private fun damerauLevenshtein(a: String, b: String): Int {
         val n = a.length
