@@ -344,21 +344,35 @@ class ImeController(
                             }
                             if (wordStart < wordEnd && wordEnd - wordStart >= 2) {
                                 val lastWord = textBefore.substring(wordStart, wordEnd)
-                                val correction = Autocorrect.correct(lastWord)
-                                if (correction != null && correction != lastWord.lowercase()) {
-                                    android.util.Log.i("Autocorrect", "correcting '$lastWord' → '$correction'")
-                                    val ic = state.editor.ic.get()
-                                    if (ic != null) {
-                                        val wordLen = wordEnd - wordStart
-                                        ic.beginBatchEdit()
-                                        ic.deleteSurroundingText(wordLen, 0)
-                                        ic.commitText(correction + " ", 1)
-                                        ic.endBatchEdit()
-                                        android.util.Log.i("Autocorrect", "correction+space applied: '${ic.getTextBeforeCursor(100, 0)}'")
-                                        // Skip super.emitText() — we handled the space
-                                        expectedContentQueue.push(state.content)
-                                        reevaluateInputShiftState()
-                                        return
+                                // Strip trailing punctuation but remember it
+                                var trailingPunct = ""
+                                var coreWord = lastWord
+                                while (coreWord.isNotEmpty() && !coreWord.last().isLetterOrDigit()) {
+                                    trailingPunct = coreWord.last() + trailingPunct
+                                    coreWord = coreWord.dropLast(1)
+                                }
+                                if (coreWord.length >= 2) {
+                                    val correction = Autocorrect.correct(coreWord)
+                                    if (correction != null && correction != coreWord.lowercase()) {
+                                        // Preserve original capitalization
+                                        val finalCorrection = if (coreWord[0].isUpperCase()) {
+                                            correction.replaceFirstChar { it.titlecase() }
+                                        } else {
+                                            correction
+                                        }
+                                        android.util.Log.i("Autocorrect", "correcting '$lastWord' → '$finalCorrection'")
+                                        val ic = state.editor.ic.get()
+                                        if (ic != null) {
+                                            val wordLen = wordEnd - wordStart
+                                            ic.beginBatchEdit()
+                                            ic.deleteSurroundingText(wordLen, 0)
+                                            ic.commitText(finalCorrection + trailingPunct + " ", 1)
+                                            ic.endBatchEdit()
+                                            android.util.Log.i("Autocorrect", "correction+space applied: '${ic.getTextBeforeCursor(100, 0)}'")
+                                            expectedContentQueue.push(state.content)
+                                            reevaluateInputShiftState()
+                                            return
+                                        }
                                     }
                                 }
                             }
