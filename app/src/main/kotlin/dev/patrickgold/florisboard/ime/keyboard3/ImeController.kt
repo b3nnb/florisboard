@@ -317,10 +317,8 @@ class ImeController(
         }
 
         override fun emit(value: K3StringOrDescriptor) {
-            android.util.Log.i("Autocorrect", "emit() called: value=$value, type=${value::class.simpleName}")
             val interceptor = emitInterceptor.load()
             if (interceptor != null) {
-                android.util.Log.i("Autocorrect", "emit() intercepted by $interceptor")
                 interceptor.onEmit(value)
                 return
             }
@@ -328,15 +326,15 @@ class ImeController(
         }
 
         override fun emitText(value: K3String) {
-            android.util.Log.i("Autocorrect", "emitText() called: value='${value}', toText='${value.toText()}'")
-            // Autocorrect: when space is pressed, check the last word and correct if needed.
-            // Uses the simple Autocorrect singleton — no NLP pipeline dependency.
+            // Autocorrect: when space is pressed, correct the last word BEFORE
+            // committing the space. Uses deleteSurroundingText to remove the
+            // misspelled word and commitText to insert the correction, then
+            // super.emitText() commits the space after the corrected word.
             val textStr = value.toText()
             if (textStr == " ") {
                 try {
                     if (Autocorrect.isLoaded()) {
                         val textBefore = state.content.surroundingText.textBefore
-                        android.util.Log.i("Autocorrect", "space pressed, textBefore='${textBefore}', loaded=${Autocorrect.isLoaded()}, dictSize=${Autocorrect.dictSize()}")
                         if (textBefore.isNotEmpty()) {
                             // Find the last word before the cursor
                             var wordEnd = textBefore.length
@@ -346,22 +344,22 @@ class ImeController(
                             }
                             if (wordStart < wordEnd && wordEnd - wordStart >= 2) {
                                 val lastWord = textBefore.substring(wordStart, wordEnd)
-                                android.util.Log.i("Autocorrect", "lastWord='$lastWord', calling correct()")
                                 val correction = Autocorrect.correct(lastWord)
-                                android.util.Log.i("Autocorrect", "correction='$correction'")
-                                if (correction != null) {
+                                if (correction != null && correction != lastWord) {
+                                    android.util.Log.i("Autocorrect", "correcting '$lastWord' → '$correction'")
                                     val ic = state.editor.ic.get()
                                     if (ic != null) {
+                                        // Delete the misspelled word and insert the correction
+                                        // BEFORE the space is committed by super.emitText()
+                                        val wordLen = wordEnd - wordStart
                                         ic.beginBatchEdit()
-                                        ic.setComposingRegion(wordStart, wordEnd)
+                                        ic.deleteSurroundingText(wordLen, 0)
                                         ic.commitText(correction, 1)
                                         ic.endBatchEdit()
                                     }
                                 }
                             }
                         }
-                    } else {
-                        android.util.Log.w("Autocorrect", "Dictionary not loaded yet!")
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("Autocorrect", "Error: ${e.message}", e)
